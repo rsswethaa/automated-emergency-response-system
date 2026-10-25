@@ -1,9 +1,24 @@
 import math
 import os
+import secrets
+from functools import wraps
 from pathlib import Path
 import sqlite3
 
-from flask import Flask, current_app, flash, g, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Flask,
+    abort,
+    current_app,
+    flash,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from detector import build_alert_message, classify_severity, detect_impact
 
@@ -27,8 +42,22 @@ def bootstrap_database(db):
     db.commit()
 
 
+def ensure_demo_users(db, admin_password: str, responder_password: str):
+    users = [
+        ("admin", generate_password_hash(admin_password), "ADMIN"),
+        ("responder", generate_password_hash(responder_password), "RESPONDER"),
+    ]
+    with db:
+        for username, password_hash, role in users:
+            existing = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+            if existing is None:
+                db.execute(
+                    "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+                    (username, password_hash, role),
+                )
+
+
 def get_db():
-    """Return one SQLite connection per Flask application context."""
     if "db" not in g:
         g.db = _connect(current_app.config["DATABASE"])
     return g.db
@@ -41,7 +70,6 @@ def close_db(exception=None):
 
 
 def ensure_database(app):
-    """Initialise once at application startup rather than seeding on requests."""
     path = Path(app.config["DATABASE"])
     path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(path) as db:
@@ -50,10 +78,14 @@ def ensure_database(app):
         ).fetchone()
         if exists is None:
             bootstrap_database(db)
+        ensure_demo_users(
+            db,
+            app.config["DEMO_ADMIN_PASSWORD"],
+            app.config["DEMO_RESPONDER_PASSWORD"],
+        )
 
 
 def validate_incident_input(latitude, longitude, impact_g, motion_value):
-    """Return an error message for invalid incident data, otherwise ``None``."""
     if any(value is None for value in (latitude, longitude, impact_g)):
         return "Latitude, longitude and impact are required."
     if not all(math.isfinite(float(value)) for value in (latitude, longitude, impact_g)):
@@ -83,7 +115,6 @@ def _coerce_incident(payload):
 
 
 def insert_incident(db, latitude, longitude, impact_g, motion_value):
-    """Insert one incident and its alert atomically and return the record id/severity."""
     motion_after_impact = motion_value == "yes"
     severity = classify_severity(impact_g, motion_after_impact)
     with db:
@@ -108,21 +139,99 @@ def create_app(config=None):
     app.config.from_mapping(
         DATABASE=Path(os.getenv("EMERGENCY_DATABASE", DEFAULT_DATABASE)),
         SECRET_KEY=os.getenv("SECRET_KEY", "dev-emergency-secret"),
+        API_KEY=os.getenv("EMERGENCY_API_KEY", "demo-emergency-api-key"),
+        DEMO_ADMIN_PASSWORD=os.getenv("DEMO_ADMIN_PASSWORD", "admin-demo"),
+        DEMO_RESPONDER_PASSWORD=os.getenv("DEMO_RESPONDER_PASSWORD", "responder-demo"),
     )
     if config:
         app.config.update(config)
-
     app.teardown_appcontext(close_db)
     ensure_database(app)
 
+    def current_user():
+        user_id = session.get("user_id")
+        if not user_id:
+            return None
+        return get_db().execute(
+            "SELECT id, username, role FROM users WHERE id = ? AND active = 1", (user_id,)
+        ).fetchone()
+
+    def csrf_token():
+        token = session.get("_csrf_token")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session["_csrf_token"] = token
+        return token
+
+    def login_required(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if current_user() is None:
+                return redirect(url_for("login", next=request.path))
+            return view(*args, **kwargs)
+        return wrapped
+
+    def role_required(*roles):
+        def decorator(view):
+            @wraps(view)
+            def wrapped(*args, **kwargs):
+                user = current_user()
+                if user is None:
+                    return redirect(url_for("login", next=request.path))
+                if user["role"] not in roles:
+                    abort(403)
+                return view(*args, **kwargs)
+            return wrapped
+        return decorator
+
+    @app.before_request
+    def protect_form_posts():
+        if request.method == "POST" and not request.is_json:
+            expected = session.get("_csrf_token")
+            supplied = request.form.get("csrf_token")
+            if not expected or not supplied or not secrets.compare_digest(expected, supplied):
+                abort(400, description="Invalid CSRF token")
+
+    @app.context_processor
+    def inject_security_context():
+        return {"csrf_token": csrf_token, "current_user": current_user()}
+
     @app.cli.command("init-db")
     def init_db_command():
-        """Explicitly reset schema and deterministic seed data."""
         db = get_db()
         bootstrap_database(db)
+        ensure_demo_users(
+            db,
+            current_app.config["DEMO_ADMIN_PASSWORD"],
+            current_app.config["DEMO_RESPONDER_PASSWORD"],
+        )
         print("Emergency response database reset and initialised.")
 
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if request.method == "POST":
+            username = request.form.get("username", "").strip().lower()
+            password = request.form.get("password", "")
+            user = get_db().execute(
+                "SELECT * FROM users WHERE username = ? AND active = 1", (username,)
+            ).fetchone()
+            if user and check_password_hash(user["password_hash"], password):
+                session.clear()
+                session["user_id"] = user["id"]
+                csrf_token()
+                return redirect(url_for("index"))
+            flash("Invalid username or password.", "error")
+        csrf_token()
+        return render_template("login.html")
+
+    @app.post("/logout")
+    @login_required
+    def logout():
+        session.clear()
+        return redirect(url_for("login"))
+
     @app.get("/")
+    @login_required
     def index():
         db = get_db()
         incidents = db.execute(
@@ -140,18 +249,18 @@ def create_app(config=None):
         return render_template("index.html", incidents=incidents, summary=summary)
 
     @app.post("/incident")
+    @role_required("ADMIN", "RESPONDER")
     def create_incident():
         latitude, longitude, impact_g, motion_value, error = _coerce_incident(request.form)
         if error:
             flash(error, "error")
             return redirect(url_for("index"))
-        incident_id, severity = insert_incident(
-            get_db(), latitude, longitude, impact_g, motion_value
-        )
+        incident_id, severity = insert_incident(get_db(), latitude, longitude, impact_g, motion_value)
         flash(f"Incident #{incident_id} recorded as {severity}.", "success")
         return redirect(url_for("index"))
 
     @app.post("/incident/<int:incident_id>/resolve")
+    @role_required("ADMIN", "RESPONDER")
     def resolve_incident(incident_id):
         db = get_db()
         with db:
@@ -166,6 +275,7 @@ def create_app(config=None):
         return redirect(url_for("index"))
 
     @app.get("/api/incidents")
+    @login_required
     def api_incidents():
         rows = get_db().execute(
             "SELECT * FROM incidents ORDER BY created_at DESC, id DESC"
@@ -179,13 +289,16 @@ def create_app(config=None):
 
     @app.post("/api/incidents")
     def api_create_incident():
+        user = current_user()
+        supplied_api_key = request.headers.get("X-API-Key", "")
+        valid_api_key = secrets.compare_digest(supplied_api_key, current_app.config["API_KEY"])
+        if not valid_api_key and not (user and user["role"] == "ADMIN"):
+            return jsonify({"error": "authentication required"}), 401
         payload = request.get_json(silent=True) or {}
         latitude, longitude, impact_g, motion_value, error = _coerce_incident(payload)
         if error:
             return jsonify({"error": error}), 400
-        incident_id, severity = insert_incident(
-            get_db(), latitude, longitude, impact_g, motion_value
-        )
+        incident_id, severity = insert_incident(get_db(), latitude, longitude, impact_g, motion_value)
         return jsonify({"id": incident_id, "severity": severity, "status": "OPEN"}), 201
 
     @app.post("/api/detect")
