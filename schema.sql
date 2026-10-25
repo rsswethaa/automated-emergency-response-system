@@ -5,7 +5,7 @@ CREATE TABLE incidents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     latitude REAL NOT NULL CHECK (latitude BETWEEN -90 AND 90),
     longitude REAL NOT NULL CHECK (longitude BETWEEN -180 AND 180),
-    impact_g REAL NOT NULL CHECK (impact_g >= 0),
+    impact_g REAL NOT NULL CHECK (impact_g BETWEEN 0 AND 100),
     motion_after_impact INTEGER NOT NULL DEFAULT 1 CHECK (motion_after_impact IN (0, 1)),
     severity TEXT NOT NULL CHECK (severity IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
     status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'RESOLVED')),
