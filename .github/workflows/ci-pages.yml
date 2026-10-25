@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,9 +19,24 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install development dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Lint with Ruff
+        run: ruff check app.py detector.py tests
+
+      - name: Type-check detector
+        run: mypy detector.py
+
+      - name: Run pytest with branch coverage
+        run: pytest --cov=app --cov=detector --cov-report=term-missing --cov-report=xml --cov-fail-under=70
+
       - name: Compile Python
         run: python -m compileall app.py detector.py tests
-      - name: Run automated tests
-        run: python -m unittest discover -s tests -v
+
+      - name: Build container
+        run: docker build -t automated-emergency-response-system:ci .
