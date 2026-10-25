@@ -1,8 +1,11 @@
-name: Enable and deploy GitHub Pages
+name: Deploy GitHub Pages demo
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages-enable.yml'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +15,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -22,14 +25,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Enable and configure Pages
+      - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - name: Upload demo
+      - name: Upload static documentation site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./demo
+          path: ./docs
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

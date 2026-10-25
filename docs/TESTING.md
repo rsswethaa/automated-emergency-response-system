@@ -1,25 +1,80 @@
-# Testing Plan
+# Testing and Validation
 
-## Detector tests
-| Input | Expected |
-|---|---|
-| 1.5g, movement detected | LOW |
-| 2.5g, movement detected | MEDIUM |
-| 4.5g, movement detected | HIGH |
-| 6.5g, no movement | CRITICAL |
+## 1. Automated test strategy
 
-## Application tests
-- database initialises from schema and seed files
-- valid incident creates an incident row
-- valid incident also creates one alert audit row
-- missing coordinates/impact do not create a record
-- resolving an incident changes status to `RESOLVED`
-- dashboard orders newest incidents first
+The test suite uses Python's standard `unittest` library and Flask's test client. Each test receives a temporary SQLite database so local application data is not modified.
 
-## Safety tests
-- UI displays prototype-only warning
-- documentation does not imply connection to emergency services
-- sample thresholds are identified as illustrative
+Current automated coverage includes:
 
-## Future automation
-Add `pytest` unit tests for `detector.py`, route tests with Flask's test client, and CI to run tests on pull requests.
+- database bootstrap from schema and seed files
+- severity decision boundaries
+- valid incident creation
+- automatic creation of one alert audit row per incident
+- incident resolution
+- invalid input rejection
+- JSON incident API
+- health endpoint
+- alert-message construction
+
+Run locally with:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+or:
+
+```bash
+make test
+```
+
+## 2. Severity boundary matrix
+
+| Impact | Motion | Expected |
+|---:|---|---|
+| 1.99g | detected | LOW |
+| 2.00g | detected | MEDIUM |
+| 3.99g | detected | MEDIUM |
+| 4.00g | detected | HIGH |
+| 6.00g | detected | HIGH |
+| 6.00g | not detected | CRITICAL |
+
+## 3. Input validation cases
+
+The application should not persist an incident when:
+
+- latitude is outside -90 to 90
+- longitude is outside -180 to 180
+- impact is negative
+- a required numeric field is missing
+- motion state is not `yes` or `no`
+
+The database schema independently reinforces several of these rules through CHECK constraints.
+
+## 4. Continuous integration
+
+`.github/workflows/ci-pages.yml` runs on pushes and pull requests to `main`. It:
+
+1. checks out the repository
+2. installs Python 3.12
+3. installs dependencies
+4. compiles Python files
+5. runs the full unit-test suite
+
+This gives the repository a reproducible automated quality gate.
+
+## 5. Manual browser checks
+
+For a portfolio review, manually verify:
+
+- the home page loads
+- the safety warning is visible
+- a LOW/MEDIUM/HIGH/CRITICAL incident can be simulated
+- a new incident appears in the dashboard
+- an open incident can be marked resolved
+- `/api/incidents` returns JSON
+- `/health` returns an `ok` status
+
+## 6. Safety validation
+
+Documentation and UI wording must consistently state that the system is an educational simulation. No part of the project should imply certified emergency-service, medical or automotive capability.

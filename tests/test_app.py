@@ -25,9 +25,10 @@ class EmergencyAppTestCase(unittest.TestCase):
             self.assertEqual(db.execute("SELECT COUNT(*) FROM incidents").fetchone()[0], 2)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM alerts").fetchone()[0], 2)
 
-    def test_severity_rules(self):
-        self.assertEqual(classify_severity(1.0, True), "LOW")
+    def test_severity_rules_and_boundaries(self):
+        self.assertEqual(classify_severity(1.99, True), "LOW")
         self.assertEqual(classify_severity(2.0, True), "MEDIUM")
+        self.assertEqual(classify_severity(3.99, True), "MEDIUM")
         self.assertEqual(classify_severity(4.0, True), "HIGH")
         self.assertEqual(classify_severity(6.0, False), "CRITICAL")
         self.assertEqual(classify_severity(6.0, True), "HIGH")
@@ -63,6 +64,39 @@ class EmergencyAppTestCase(unittest.TestCase):
                 "SELECT status FROM incidents WHERE id = ?", (incident[0],)
             ).fetchone()[0]
         self.assertEqual(status, "RESOLVED")
+
+    def test_invalid_incident_is_not_written(self):
+        self.client.get("/")
+        with sqlite3.connect(emergency_app.DATABASE) as db:
+            before = db.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
+
+        response = self.client.post(
+            "/incident",
+            data={
+                "latitude": 120,
+                "longitude": 174.7,
+                "impact_g": -1,
+                "motion_after_impact": "unknown",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        with sqlite3.connect(emergency_app.DATABASE) as db:
+            after = db.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
+        self.assertEqual(before, after)
+
+    def test_incident_api(self):
+        response = self.client.get("/api/incidents")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(len(payload["incidents"]), 2)
+        self.assertIn("severity", payload["incidents"][0])
+
+    def test_health_endpoint(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "ok")
 
     def test_alert_message(self):
         message = build_alert_message(7, "HIGH", -36.8, 174.7)
