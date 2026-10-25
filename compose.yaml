@@ -1,0 +1,19 @@
+services:
+  emergency-response:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-local-change-me}
+      EMERGENCY_API_KEY: ${EMERGENCY_API_KEY:-local-api-key}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-admin-demo}
+      DEMO_RESPONDER_PASSWORD: ${DEMO_RESPONDER_PASSWORD:-responder-demo}
+      EMERGENCY_DATABASE: /data/emergency.db
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      FLASK_DEBUG: "0"
+    volumes:
+      - emergency-data:/data
+    restart: unless-stopped
+
+volumes:
+  emergency-data:
