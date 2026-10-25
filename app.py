@@ -1,9 +1,10 @@
+import logging
 import math
 import os
 import secrets
+import sqlite3
 from functools import wraps
 from pathlib import Path
-import sqlite3
 
 from flask import (
     Flask,
@@ -24,6 +25,7 @@ from detector import build_alert_message, classify_severity, detect_impact
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATABASE = BASE_DIR / "emergency.db"
+LOGGER = logging.getLogger("emergency_response")
 
 
 def _connect(path: Path | str):
@@ -107,7 +109,13 @@ def _coerce_incident(payload):
         longitude = float(payload.get("longitude"))
         impact_g = float(payload.get("impact_g"))
     except (TypeError, ValueError):
-        return None, None, None, payload.get("motion_after_impact"), "Latitude, longitude and impact must be numbers."
+        return (
+            None,
+            None,
+            None,
+            payload.get("motion_after_impact"),
+            "Latitude, longitude and impact must be numbers.",
+        )
     motion_value = str(payload.get("motion_after_impact", "yes")).lower()
     return latitude, longitude, impact_g, motion_value, validate_incident_input(
         latitude, longitude, impact_g, motion_value
@@ -131,6 +139,8 @@ def insert_incident(db, latitude, longitude, impact_g, motion_value):
             "INSERT INTO alerts (incident_id, recipient, channel, message) VALUES (?, ?, ?, ?)",
             (incident_id, "demo-responder", "SIMULATED", message),
         )
+    LOGGER.info("incident_created incident_id=%s severity=%s", incident_id, severity)
+    LOGGER.info("alert_created incident_id=%s channel=SIMULATED", incident_id)
     return incident_id, severity
 
 
@@ -145,6 +155,15 @@ def create_app(config=None):
     )
     if config:
         app.config.update(config)
+
+    log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    LOGGER.setLevel(log_level)
+
     app.teardown_appcontext(close_db)
     ensure_database(app)
 
@@ -169,6 +188,7 @@ def create_app(config=None):
             if current_user() is None:
                 return redirect(url_for("login", next=request.path))
             return view(*args, **kwargs)
+
         return wrapped
 
     def role_required(*roles):
@@ -181,7 +201,9 @@ def create_app(config=None):
                 if user["role"] not in roles:
                     abort(403)
                 return view(*args, **kwargs)
+
             return wrapped
+
         return decorator
 
     @app.before_request
@@ -255,7 +277,9 @@ def create_app(config=None):
         if error:
             flash(error, "error")
             return redirect(url_for("index"))
-        incident_id, severity = insert_incident(get_db(), latitude, longitude, impact_g, motion_value)
+        incident_id, severity = insert_incident(
+            get_db(), latitude, longitude, impact_g, motion_value
+        )
         flash(f"Incident #{incident_id} recorded as {severity}.", "success")
         return redirect(url_for("index"))
 
@@ -271,6 +295,7 @@ def create_app(config=None):
         if cursor.rowcount == 0:
             flash("Incident was not found or was already resolved.", "error")
         else:
+            LOGGER.info("incident_resolved incident_id=%s", incident_id)
             flash(f"Incident #{incident_id} marked resolved.", "success")
         return redirect(url_for("index"))
 
@@ -298,7 +323,9 @@ def create_app(config=None):
         latitude, longitude, impact_g, motion_value, error = _coerce_incident(payload)
         if error:
             return jsonify({"error": error}), 400
-        incident_id, severity = insert_incident(get_db(), latitude, longitude, impact_g, motion_value)
+        incident_id, severity = insert_incident(
+            get_db(), latitude, longitude, impact_g, motion_value
+        )
         return jsonify({"id": incident_id, "severity": severity, "status": "OPEN"}), 201
 
     @app.post("/api/detect")
