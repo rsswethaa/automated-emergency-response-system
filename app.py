@@ -9,10 +9,25 @@ DATABASE = BASE_DIR / "emergency.db"
 app = Flask(__name__)
 
 
+def bootstrap_database(db):
+    """Create the demo schema and seed incidents when the database is empty."""
+    for filename in ("schema.sql", "seed.sql"):
+        path = BASE_DIR / filename
+        if path.exists():
+            db.executescript(path.read_text(encoding="utf-8"))
+    db.commit()
+
+
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(DATABASE)
         g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON")
+        table_exists = g.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='incidents'"
+        ).fetchone()
+        if table_exists is None:
+            bootstrap_database(g.db)
     return g.db
 
 
@@ -25,12 +40,7 @@ def close_db(exception=None):
 
 @app.cli.command("init-db")
 def init_db_command():
-    db = get_db()
-    for filename in ("schema.sql", "seed.sql"):
-        path = BASE_DIR / filename
-        if path.exists():
-            db.executescript(path.read_text(encoding="utf-8"))
-    db.commit()
+    bootstrap_database(get_db())
     print("Emergency response database initialised.")
 
 
