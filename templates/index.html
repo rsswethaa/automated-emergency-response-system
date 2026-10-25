@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Automated Emergency Response System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <p class="eyebrow">Educational Safety-Tech Prototype</p>
+      <h1>Automated Emergency Response System</h1>
+      <p>Simulate accident detection, severity classification and responder notification.</p>
+      <div class="warning">Prototype only — not for real emergency or medical use.</div>
+    </header>
+
+    <section class="card">
+      <h2>Simulate an incident</h2>
+      <form action="{{ url_for('create_incident') }}" method="post" class="grid">
+        <label>Latitude<input name="latitude" type="number" step="any" value="-36.8485" required></label>
+        <label>Longitude<input name="longitude" type="number" step="any" value="174.7633" required></label>
+        <label>Impact (g)<input name="impact_g" type="number" step="0.1" min="0" value="3.5" required></label>
+        <label>Motion after impact
+          <select name="motion_after_impact"><option value="yes">Detected</option><option value="no">Not detected</option></select>
+        </label>
+        <button type="submit">Create simulated incident</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Incident dashboard</h2>
+      <div class="incidents">
+        {% for incident in incidents %}
+        <article class="incident severity-{{ incident.severity|lower }}">
+          <div>
+            <strong>#{{ incident.id }} · {{ incident.severity }}</strong>
+            <p>{{ incident.latitude }}, {{ incident.longitude }} · {{ incident.impact_g }}g</p>
+            <small>{{ incident.created_at }} · {{ incident.status }}</small>
+          </div>
+          {% if incident.status != 'RESOLVED' %}
+          <form action="{{ url_for('resolve_incident', incident_id=incident.id) }}" method="post"><button>Mark resolved</button></form>
+          {% endif %}
+        </article>
+        {% else %}<p>No incidents recorded.</p>{% endfor %}
+      </div>
+    </section>
+  </main>
+</body>
+</html>
