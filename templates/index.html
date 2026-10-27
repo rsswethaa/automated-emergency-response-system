@@ -1,9 +1,88 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Automated Emergency Response System</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
-<body><main class="container">
-<header><p class="eyebrow">Educational Safety-Tech Prototype</p><h1>Automated Emergency Response System</h1><p>Simulate accelerometer-based incident detection, severity classification and responder notification.</p><div class="warning">Prototype only — not for real emergency or medical use.</div><p>Signed in as <strong>{{ current_user.username }}</strong> · {{ current_user.role }}</p><form action="{{ url_for('logout') }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Sign out</button></form></header>
-{% with messages=get_flashed_messages(with_categories=true) %}{% if messages %}<section class="card">{% for category,message in messages %}<p class="flash flash-{{ category }}">{{ message }}</p>{% endfor %}</section>{% endif %}{% endwith %}
-<section class="card"><h2>Simulate an incident</h2><form action="{{ url_for('create_incident') }}" method="post" class="grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Latitude<input name="latitude" type="number" step="any" min="-90" max="90" value="-36.8485" required></label><label>Longitude<input name="longitude" type="number" step="any" min="-180" max="180" value="174.7633" required></label><label>Impact (g)<input name="impact_g" type="number" step="0.1" min="0" max="100" value="3.5" required></label><label>Motion after impact<select name="motion_after_impact"><option value="yes">Detected</option><option value="no">Not detected</option></select></label><button type="submit">Create simulated incident</button></form></section>
-<section class="card"><h2>Incident dashboard</h2><div class="incidents">{% for incident in incidents %}<article class="incident severity-{{ incident.severity|lower }}"><div><strong>#{{ incident.id }} · {{ incident.severity }}</strong><p>{{ incident.latitude }}, {{ incident.longitude }} · {{ incident.impact_g }}g</p><small>{{ incident.created_at }} · {{ incident.status }}</small></div>{% if incident.status != 'RESOLVED' %}<form action="{{ url_for('resolve_incident', incident_id=incident.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Mark resolved</button></form>{% endif %}</article>{% else %}<p>No incidents recorded.</p>{% endfor %}</div></section>
-</main></body></html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sentinel Response | Command Centre</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="topbar">
+      <div class="brand-lockup"><span class="brand-mark">S</span><span>Sentinel Response</span></div>
+      <div class="nav-actions">
+        <span class="status-pill"><i></i> System online</span>
+        <span class="user-chip">{{ current_user.username }} · {{ current_user.role }}</span>
+        <form action="{{ url_for('logout') }}" method="post" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="ghost-btn" type="submit">Sign out</button></form>
+      </div>
+    </nav>
+
+    <main class="page-wrap">
+      <section class="dashboard-hero">
+        <div>
+          <p class="eyebrow">Operational simulation</p>
+          <h1>Emergency response command centre</h1>
+          <p class="lede">Simulate an impact event, classify severity, create an alert and move the incident through a transparent responder workflow.</p>
+        </div>
+        <div class="hero-badge"><span>Prototype boundary</span><strong>Educational use only</strong><small>No real dispatch or medical decision-making.</small></div>
+      </section>
+
+      {% with messages=get_flashed_messages(with_categories=true) %}{% if messages %}<section class="flash-stack">{% for category,message in messages %}<div class="flash flash-{{ category }}">{{ message }}</div>{% endfor %}</section>{% endif %}{% endwith %}
+
+      <section class="kpi-grid">
+        <article class="kpi"><span>Total incidents</span><strong>{{ summary.total or 0 }}</strong><small>Recorded in the demo store</small></article>
+        <article class="kpi"><span>Open</span><strong>{{ summary.open_count or 0 }}</strong><small>Awaiting responder action</small></article>
+        <article class="kpi critical-kpi"><span>Critical</span><strong>{{ summary.critical_count or 0 }}</strong><small>Highest simulated severity</small></article>
+        <article class="kpi"><span>Resolved</span><strong>{{ summary.resolved_count or 0 }}</strong><small>Closed incidents</small></article>
+      </section>
+
+      <section class="workspace-grid">
+        <article class="panel simulator-panel">
+          <div class="panel-head"><div><span class="mini-label">Scenario builder</span><h2>Simulate an incident</h2></div><span class="step-chip">01 · Input</span></div>
+          <p class="panel-copy">Use the sample Auckland coordinates or change the values to test validation and severity rules.</p>
+          <form action="{{ url_for('create_incident') }}" method="post" class="scenario-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-grid">
+              <label>Latitude<input name="latitude" type="number" step="any" min="-90" max="90" value="-36.8485" required></label>
+              <label>Longitude<input name="longitude" type="number" step="any" min="-180" max="180" value="174.7633" required></label>
+              <label>Impact force <span class="unit">g</span><input name="impact_g" type="number" step="0.1" min="0" max="100" value="3.5" required></label>
+              <label>Motion after impact<select name="motion_after_impact"><option value="yes">Detected</option><option value="no">Not detected</option></select></label>
+            </div>
+            <button class="primary-btn" type="submit">Run incident simulation <span>→</span></button>
+          </form>
+          <div class="severity-guide">
+            <span><i class="dot low"></i>Low &lt;2g</span><span><i class="dot medium"></i>Medium 2–4g</span><span><i class="dot high"></i>High ≥4g</span><span><i class="dot critical"></i>Critical ≥6g + no motion</span>
+          </div>
+        </article>
+
+        <article class="panel architecture-panel">
+          <div class="panel-head"><div><span class="mini-label">System flow</span><h2>How the prototype works</h2></div><span class="step-chip">02 · Logic</span></div>
+          <div class="flow-list">
+            <div><span>1</span><p><strong>Validate signal</strong><small>Coordinates, impact and motion bounds</small></p></div>
+            <div><span>2</span><p><strong>Classify severity</strong><small>Transparent rule-based thresholds</small></p></div>
+            <div><span>3</span><p><strong>Create alert</strong><small>Incident + simulated responder notification</small></p></div>
+            <div><span>4</span><p><strong>Track resolution</strong><small>Auditable state transition</small></p></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel incident-panel">
+        <div class="panel-head"><div><span class="mini-label">Live demo store</span><h2>Incident activity</h2></div><span class="step-chip">03 · Response</span></div>
+        <div class="incident-table-head"><span>Incident</span><span>Signal</span><span>Status</span><span>Action</span></div>
+        <div class="incidents">
+          {% for incident in incidents %}
+          <article class="incident severity-{{ incident.severity|lower }}">
+            <div class="incident-id"><span class="severity-dot"></span><div><strong>#{{ incident.id }} · {{ incident.severity }}</strong><small>{{ incident.created_at }}</small></div></div>
+            <div class="signal-data"><strong>{{ incident.impact_g }}g</strong><small>{{ incident.latitude }}, {{ incident.longitude }}</small></div>
+            <div><span class="state-badge state-{{ incident.status|lower }}">{{ incident.status }}</span></div>
+            <div>{% if incident.status != 'RESOLVED' %}<form action="{{ url_for('resolve_incident', incident_id=incident.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="compact-btn" type="submit">Resolve</button></form>{% else %}<span class="resolved-mark">✓ Closed</span>{% endif %}</div>
+          </article>
+          {% else %}<div class="empty-state"><strong>No incidents yet</strong><span>Run a scenario above to populate the command centre.</span></div>{% endfor %}
+        </div>
+      </section>
+
+      <footer class="product-footer"><span>Sentinel Response · portfolio prototype</span><span>Flask · SQLite · REST API · Docker · CI</span></footer>
+    </main>
+  </div>
+</body>
+</html>
