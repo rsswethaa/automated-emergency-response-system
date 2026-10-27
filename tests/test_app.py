@@ -55,7 +55,7 @@ def test_dashboard_requires_login(client):
 
     logged_in = login(client)
     assert logged_in.status_code == 200
-    assert b"Automated Emergency Response System" in logged_in.data
+    assert b"Emergency response command centre" in logged_in.data
 
 
 def test_home_bootstraps_database_and_users(app, client):
