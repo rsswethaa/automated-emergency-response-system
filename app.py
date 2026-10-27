@@ -46,16 +46,22 @@ def bootstrap_database(db):
 
 def ensure_demo_users(db, admin_password: str, responder_password: str):
     users = [
-        ("admin", generate_password_hash(admin_password), "ADMIN"),
-        ("responder", generate_password_hash(responder_password), "RESPONDER"),
+        ("admin", admin_password, "ADMIN"),
+        ("responder", responder_password, "RESPONDER"),
     ]
     with db:
-        for username, password_hash, role in users:
+        for username, password, role in users:
+            password_hash = generate_password_hash(password)
             existing = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
             if existing is None:
                 db.execute(
                     "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
                     (username, password_hash, role),
+                )
+            else:
+                db.execute(
+                    "UPDATE users SET password_hash = ?, role = ?, active = 1 WHERE username = ?",
+                    (password_hash, role, username),
                 )
 
 
@@ -152,6 +158,8 @@ def create_app(config=None):
         API_KEY=os.getenv("EMERGENCY_API_KEY", "demo-emergency-api-key"),
         DEMO_ADMIN_PASSWORD=os.getenv("DEMO_ADMIN_PASSWORD", "admin-demo"),
         DEMO_RESPONDER_PASSWORD=os.getenv("DEMO_RESPONDER_PASSWORD", "responder-demo"),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
     )
     if config:
         app.config.update(config)
@@ -208,11 +216,17 @@ def create_app(config=None):
 
     @app.before_request
     def protect_form_posts():
+        # Login is intentionally exempt for the public portfolio demo. This avoids
+        # stale CSRF/session cookies causing a 400 immediately after a Render
+        # redeploy. Authenticated state-changing routes remain CSRF protected.
+        if request.endpoint == "login":
+            return None
         if request.method == "POST" and not request.is_json:
             expected = session.get("_csrf_token")
             supplied = request.form.get("csrf_token")
             if not expected or not supplied or not secrets.compare_digest(expected, supplied):
                 abort(400, description="Invalid CSRF token")
+        return None
 
     @app.context_processor
     def inject_security_context():
@@ -241,6 +255,9 @@ def create_app(config=None):
                 session.clear()
                 session["user_id"] = user["id"]
                 csrf_token()
+                next_url = request.args.get("next")
+                if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+                    return redirect(next_url)
                 return redirect(url_for("index"))
             flash("Invalid username or password.", "error")
         csrf_token()
