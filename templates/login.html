@@ -1,3 +1,64 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Emergency System Login</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
-<body><main class="container"><section class="card"><p class="eyebrow">Protected demo</p><h1>Sign in</h1><p>Use a demo responder or admin account to access incident controls.</p>{% with messages=get_flashed_messages(with_categories=true) %}{% for category,message in messages %}<p class="flash flash-{{ category }}">{{ message }}</p>{% endfor %}{% endwith %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Username<input name="username" required autocomplete="username"></label><label>Password<input name="password" type="password" required autocomplete="current-password"></label><button type="submit">Sign in</button></form><p><small>Demo accounts: responder / responder-demo · admin / admin-demo. Change these through environment variables outside local demos.</small></p></section></main></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sentinel Response | Demo Access</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-visual">
+      <div class="brand-lockup"><span class="brand-mark">S</span><span>Sentinel Response</span></div>
+      <div class="hero-copy">
+        <span class="status-pill"><i></i> Portfolio system online</span>
+        <p class="eyebrow">Safety-tech command platform</p>
+        <h1>From impact signal to responder action.</h1>
+        <p class="lede">An explainable emergency-response prototype that validates incident data, classifies severity, persists alerts and tracks resolution workflows.</p>
+      </div>
+      <div class="feature-strip">
+        <div><strong>4</strong><span>severity levels</span></div>
+        <div><strong>API</strong><span>incident + detection</span></div>
+        <div><strong>Audit</strong><span>tracked lifecycle</span></div>
+      </div>
+      <p class="safety-note">Educational portfolio prototype — not for medical, automotive or real emergency use.</p>
+    </section>
+
+    <section class="auth-card">
+      <div class="auth-card-head">
+        <span class="mini-label">Interactive demo</span>
+        <h2>Enter the command centre</h2>
+        <p>Choose a demo role or enter the credentials manually.</p>
+      </div>
+      {% with messages=get_flashed_messages(with_categories=true) %}
+        {% for category,message in messages %}<div class="flash flash-{{ category }}">{{ message }}</div>{% endfor %}
+      {% endwith %}
+
+      <div class="demo-roles">
+        <button class="role-card" type="button" onclick="fillDemo('responder','responder-demo')">
+          <span class="role-icon">R</span><span><strong>Responder</strong><small>Review & resolve incidents</small></span><span class="arrow">→</span>
+        </button>
+        <button class="role-card" type="button" onclick="fillDemo('admin','admin-demo')">
+          <span class="role-icon admin">A</span><span><strong>Administrator</strong><small>Full demo access</small></span><span class="arrow">→</span>
+        </button>
+      </div>
+
+      <div class="divider"><span>or sign in manually</span></div>
+      <form method="post" class="auth-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Username<input id="username" name="username" required autocomplete="username" placeholder="responder"></label>
+        <label>Password<input id="password" name="password" type="password" required autocomplete="current-password" placeholder="••••••••••••"></label>
+        <button class="primary-btn" type="submit">Launch demo <span>→</span></button>
+      </form>
+      <p class="microcopy">Demo credentials are intentionally public for portfolio review. Production systems would use managed identity and stronger access controls.</p>
+    </section>
+  </main>
+  <script>
+    function fillDemo(user, pass) {
+      document.getElementById('username').value = user;
+      document.getElementById('password').value = pass;
+      document.getElementById('username').focus();
+    }
+  </script>
+</body>
+</html>
